@@ -1,19 +1,20 @@
-import pandas as pd
+import faulthandler
 
 if __name__ ==  "__main__":
     from training import Preprocessing
     from compute import Compute
-    import multiprocessing
+    faulthandler.enable() #start @ the beginning
     preprocessing = Preprocessing()
     compute = Compute()
     processing = input("Pré-processing requis ? True or False")
-    # Import scapped website content
+    # Import scrapped website content
     if processing == 'True':
         scrapped, hs_code = preprocessing.read_data()
         tokenize_sentences = preprocessing.tokenize_sentence(scrapped)
         clear_sentences = preprocessing.clear_sentence(tokenize_sentences)
+    else:
+        clear_sentences = preprocessing.import_consolided_data()
     training = input("Entraînement des modèles requis ? True or False ")
-
     if training == 'True':
         compute.train_model(clear_sentences)
     # TODO:

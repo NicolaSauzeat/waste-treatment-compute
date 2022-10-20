@@ -4,19 +4,20 @@ from gensim.models import Word2Vec
 import torch
 import seaborn
 import pandas as pd
-from sklearn import metrics
+import sklearn
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
 from transformers import CamembertForSequenceClassification, CamembertTokenizer, AdamW
-
+from sklearn import metrics
 
 class Compute:
 
     def __init__(self):
         self.pool = Pool(multiprocessing.cpu_count() - 1)
-        self.path_in = "./Resultats/in/"
-        self.path_out = "./Resultats/out/"
+        self.path_in = "C:/Users/OpenStudio.Aurora-R13/Desktop/waste-treatment/Resultats/in/"
+        self.path_out = "C:/Users/OpenStudio.Aurora-R13/Desktop/waste-treatment/Resultats/out/"
+        self.batch = 32
 
-    def train_model(self, final_sentences):
+    def train_model(self, final_sentences,hs_code):
         try:
             modele = int(input("""Choisissez un modèle parmis les suivants : /n 1: Word2Vec /n 2 : Word2Vec with lemma 
             /n  3 : Sentence2Vec /n 4 : All"""))
@@ -28,13 +29,71 @@ class Compute:
         elif modele == 2:
             self.train_w2v_model(final_sentences["lemma_sentence"], model=2)
         elif modele ==3:
-            final_dataset = self.train_bert_model(final_sentences)
-            self.train_s2v_model(final_dataset)
+            dataset = self.preprocess_bert_model(final_sentences)
+            final_dataset  = self.train_bert_model(dataset, hs_code)
 
-    def train_bert_model(self, final_sentences):
+    def preprocess_bert_model(self, final_sentences):
         validation_set = pd.read_csv(self.path_in +"jeu_annote_final.csv", sep="!", usecols=[2,3,4,5,6,7,8,9,10,11,12])
         validation_set_final = validation_set.merge(final_sentences, left_on="etablissement", right_on="name")
+        validation_set_final = validation_set_final.merge()
+        return validation_set_final
 
+    def initialize_bert_model(self, validation_set):
+        tokenizer = CamembertTokenizer.from_pretrained('camembert-base', do_lower_case=True)
+        # La fonction batch_encode_plus encode un batch de donnees
+        # Choose web_content in validation_set
+        # Initialize max_length
+        encoded_batch = tokenizer.batch_encode_plus(validation_set.tolist(), add_special_tokens=True, max_length=MAX_LENGTH,
+                                                    padding=True, truncation=True, return_attention_mask=True,
+                                                    return_tensors='pt')
+        # Initialize hs description in sentiments
+        sentiments = torch.tensor(validation_set.tolist())
+
+        return tokenizer, encoded_batch,sentiments
+
+    @staticmethod
+    def initialize_training_dataset():
+        # On transforme la liste des sentiments en tenseur
+        # On calcule l'indice qui va delimiter nos datasets d'entrainement et de validation
+        # On utilise 80% du jeu de donnée pour l'entrainement et les 20% restant pour la validation
+        split_border = int(len(sentiments) * 0.8)
+        train_dataset = TensorDataset(
+            encoded_batch['input_ids'][:split_border],
+            encoded_batch['attention_mask'][:split_border],
+            sentiments[:split_border])
+
+        validation_dataset = TensorDataset(
+            encoded_batch['input_ids'][split_border:],
+            encoded_batch['attention_mask'][split_border:],
+            sentiments[split_border:])
+        return train_dataset, validation_dataset
+
+    def initialize_dataloader():
+        # On cree les DataLoaders d'entrainement et de validation
+        # Le dataloader est juste un objet iterable
+        # On le configure pour iterer le jeu d'entrainement de façon aleatoire et creer les batchs.
+        train_dataloader = DataLoader(
+            train_dataset, sampler=RandomSampler(train_dataset), batch_size=self.batch)
+        validation_dataloader = DataLoader(
+            validation_dataset,
+            sampler=SequentialSampler(validation_dataset), batch_size=self.batch)
+        return train_dataloader, validation_dataloader
+
+    @staticmethod
+    def load_bert_model():
+        # On importe la version pre-entrainée de camemBERT 'base'
+        # change value of num_labels with len of hs_categories
+        model = CamembertForSequenceClassification.from_pretrained(
+            'camembert-base',
+            num_labels=2)
+        return model
+
+    def train_bert_model(self, validation_set):
+        tokenizer, encoded_batch, sentiments = self.initialize_bert_model(self, validation_set)
+        train_dataset, validation_dataset = self.initialize_training_dataset(encoded_batch, sentiments)
+        train_dataloader, validation_dataloader = self.initialize_dataloader(train_dataset, validation_dataset)
+        model = self.load_bert_model()
+        return validation_dataset, train_dataset
 
     def train_w2v_model(self, sentence, model):
         # Word2Vec model training

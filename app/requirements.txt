@@ -9,3 +9,4 @@ torch==1.12.1
 gensim ==4.1.2
 transformers==4.22.1
 cleantext
+pathlib
